@@ -47,6 +47,12 @@ void bv_gen(bool**, int*, int);
 void data_test(int**, int**, bool**, int*, int);
 
 
+
+
+
+
+
+
 int main(int argc, char** argv){
 	if(argc!=4){
 		cout<<"usage ./openflow  *Packet_num   *Grid_dim   *Block_dim"<<endl; 
@@ -78,16 +84,18 @@ int main(int argc, char** argv){
 			bv[i] = new bool[ALLRULE];
 		}
 	int* bv_final = new int[packet_num];
-	printf("check point 1\n");
 	tree_gen(tree, FIELD, RULE);
-	printf("check point 2\n");
 	header_gen(headers, tree, FIELD, packet_num);
-	printf("check point 3\n");
 	bv_gen(bv, bv_final, packet_num);
-	printf("check point 4\n");
 	data_test(tree, headers, bv, bv_final, packet_num);
 
-
+/********************************************************
+*	Allocate Space in Device:
+*		1. gpu_tree 
+*		2. gpu_bv 
+*		3. gpu_bv_final
+*		4. gpu_headers
+********************************************************/
 
 
 
@@ -202,16 +210,14 @@ void bv_gen(bool** bv, int* bv_final, int packet_num){
 }
 void data_test(int** tree, int** headers, bool** bv, int* bv_final, int packet_num){
 	cout<<"Tree: "<<endl;
-	cout<<tree[15][0]<<endl;
-/*
 	for(int i = 0; i < RULE; i++){
 		cout<<"Line: "<<i<<": ";
 		for(int j = 0; j < FIELD; j++){
-			cout<<tree[i][j]<<" ";
+			cout<<tree[j][i]<<" ";
 		}
 		cout<<endl;
 	}
-*/	
+
 	cout<<endl<<"Headers: "<<endl;
 	for(int i = 0; i < packet_num; i++){
 		cout<<"Header "<<i<<": ";
