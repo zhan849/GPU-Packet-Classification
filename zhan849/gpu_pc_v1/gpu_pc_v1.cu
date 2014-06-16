@@ -24,7 +24,7 @@
 
 #define FIELD 15
 #define RULE 255
-#define ALLRULE 900
+#define ALLRULE 30000
 #define WSIZE 32
 
 #define cudaCheckErrors(msg) \
@@ -43,10 +43,10 @@ using namespace std;
 
 void header_gen(int**, int**, int, int);
 void tree_gen(int**, int, int);
-void bv_gen(bool**, int*, int);
+void bv_gen(unsigned long int**, int*, int);
 void data_test(int**, int**, bool**, int*, int, int);
 
-__global__ void packet_classify(int* gpu_tree, int* gpu_headers, bool* gpu_bv, int* gpu_bv_final, int* gpu_match_result, int packet_num, int block_dim){
+__global__ void packet_classify(int* gpu_tree, int* gpu_headers, unsigned long int* gpu_bv, int* gpu_bv_final, int* gpu_match_result, int packet_num, int block_dim){
 	__shared__ int gpu_tree_shared[FIELD*RULE];
 	//int* match_result = new int[packet_num * FIELD];
 	int level = 0;
@@ -56,22 +56,17 @@ __global__ void packet_classify(int* gpu_tree, int* gpu_headers, bool* gpu_bv, i
 	}
 	__syncthreads();
 
-	if (blockDim.x * blockIdx.x + threadIdx.x < packet_num * FIELD){
+//	if (blockDim.x * blockIdx.x + threadIdx.x < packet_num * FIELD){
 		int index = blockDim.x * blockIdx.x + threadIdx.x;
 		int tree_idx = index % FIELD * FIELD;
 		int i = 0;
 		while (i < RULE){
-			if (gpu_headers[index] <= gpu_tree_shared[tree_idx]){
-				i = 2 * i + 1;
-				tree_idx += i;
-			}else {
-				i = 2 * i + 2;
-				tree_idx += i;
-			}
+			i = 2 * i + (gpu_headers[index] <= gpu_tree_shared[tree_idx]) * 1 + (gpu_headers[index] > gpu_tree_shared[tree_idx]) * 2;
+			tree_idx += i;
 		}
 		gpu_match_result[index] = i - RULE;
-	}
-	__syncthreads();
+//	}
+/*	__syncthreads();
 	
 	//if ((blockDim.x * blockIdx.x + threadIdx.x)% 15 == 0){
 	if (blockDim.x * blockIdx.x + threadIdx.x < packet_num * FIELD){
@@ -80,7 +75,7 @@ __global__ void packet_classify(int* gpu_tree, int* gpu_headers, bool* gpu_bv, i
 		bool result[ALLRULE/FIELD];
 		//int ruleIdx[FIELD];
 		for (int i = 0; i < M; i++){
-			result[i] = true;
+			result[i] = &;
 		}
 		for(int i = 0; i < M; i++){
 			for (int j = 0; j < FIELD; j++){
@@ -89,7 +84,7 @@ __global__ void packet_classify(int* gpu_tree, int* gpu_headers, bool* gpu_bv, i
 			}
 		}
 		for(int i = 0; i < M; i++){
-			if (result[i] == true){
+			if (result[i]){
 				//printf("threadidx: %d, M: %d, packet: %d, rule: %d\n", index, M, index/FIELD, index % FIELD * M + i);
 				gpu_bv_final[index/FIELD]= index % FIELD * M + i;
 				break;
@@ -97,7 +92,7 @@ __global__ void packet_classify(int* gpu_tree, int* gpu_headers, bool* gpu_bv, i
 		}
 
 	}
-
+*/
 
 
 };
@@ -129,9 +124,9 @@ int main(int argc, char** argv){
 		for (int i = 0; i < packet_num; i++){
 			headers[i] = new int[FIELD];
 		}
-	bool** bv = new bool*[FIELD*(RULE+1)];
+	unsigned long int** bv = new unsigned long int*[FIELD*(RULE+1)];
 		for(int i = 0; i < FIELD*(RULE+1); i++){
-			bv[i] = new bool[ALLRULE];
+			bv[i] = new unsigned long int[ALLRULE / sizeof(unsigned long int)];
 		}
 	int* bv_final = new int[packet_num];
 	int* match_result = new int[packet_num * FIELD];
@@ -147,7 +142,7 @@ int main(int argc, char** argv){
 ********************************************************/
 	int* tree_flatten = new int[RULE*FIELD];
 	int* headers_flatten = new int[packet_num*FIELD];
-	bool* bv_flatten = new bool[FIELD*(RULE+1)*ALLRULE];
+	unsigned long int* bv_flatten = new unsigned long int[FIELD*(RULE+1) * ALLRULE / sizeof(unsigned long int)];
 
 	for (int i = 0; i < FIELD; i++){
 		for (int j = 0; j < RULE; j++){
@@ -160,8 +155,8 @@ int main(int argc, char** argv){
 		}
 	}
 	for (int i = 0; i < FIELD*(RULE+1); i++){
-		for (int j = 0; j < ALLRULE; j++){
-			bv_flatten[i*ALLRULE+j] = bv[i][j];
+		for (int j = 0; j < ALLRULE / sizeof(unsigned long int); j++){
+			bv_flatten[i*ALLRULE / sizeof(unsigned long int) + j] = bv[i][j];
 		}
 	}
 /********************************************************
@@ -193,13 +188,13 @@ int main(int argc, char** argv){
 	int* gpu_headers;
 	int* gpu_bv_final;
 	int* gpu_match_result;
-	bool* gpu_bv;
+	unsigned long int* gpu_bv;
 
 	cudaMalloc((void**)&gpu_tree, sizeof(int*)*size_t(FIELD*RULE));
 		cudaCheckErrors("cudaMalloc gpu_tree");
 	cudaMalloc((void**)&gpu_headers, sizeof(int)*FIELD*packet_num);
 		cudaCheckErrors("cudaMalloc gpu_headers");
-	cudaMalloc((void**)&gpu_bv, sizeof(bool)*(RULE+1)*ALLRULE);
+	cudaMalloc((void**)&gpu_bv, (RULE+1)*ALLRULE);
 		cudaCheckErrors("cudaMalloc gpu_bv");
 	cudaMalloc((void**)&gpu_match_result, sizeof(int)*packet_num*FIELD);
 		cudaCheckErrors("cudaMalloc gpu_match_result");
@@ -212,7 +207,7 @@ int main(int argc, char** argv){
 		cudaCheckErrors("cudaMemcpy gpu_tree");
 	cudaMemcpy(gpu_headers, headers_flatten, sizeof(int)*FIELD*packet_num, cudaMemcpyHostToDevice);
 		cudaCheckErrors("cudaMemcpy gpu_headers");
-	cudaMemcpy(gpu_bv, bv_flatten, sizeof(bool)*(RULE+1)*ALLRULE, cudaMemcpyHostToDevice);
+	cudaMemcpy(gpu_bv, bv_flatten, (RULE+1)*ALLRULE, cudaMemcpyHostToDevice);
 		cudaCheckErrors("cudaMemcpy gpu_bv");
 	cudaMemcpy(gpu_match_result, match_result, sizeof(int)*FIELD*packet_num, cudaMemcpyHostToDevice);
 		cudaCheckErrors("cudaMemcpy gpu_match_result");
@@ -225,7 +220,7 @@ int main(int argc, char** argv){
 	cudaEventDestroy(time_memcpyH2D_stop);
 	cudaEventDestroy(time_memcpyH2D_start);
 
-	cout<<endl<<"*	1. Time for memcpy H2D: "<<time1<<"ms, Total bytes copied: "<<sizeof(int)*RULE*FIELD + sizeof(int)*FIELD*packet_num + sizeof(bool)*(RULE+1)*ALLRULE/64 + sizeof(int)*packet_num<<endl;;
+	cout<<endl<<"*	1. Time for memcpy H2D: "<<time1<<"ms, Total bytes copied: "<<sizeof(int)*RULE*FIELD + sizeof(int)*FIELD*packet_num + (RULE+1)*ALLRULE + sizeof(int)*packet_num<<endl;
 
 
 
@@ -324,15 +319,10 @@ void header_gen(int** headers, int** tree, int field, int packet_num){
 	
 	}
 }
-void bv_gen(bool** bv, int* bv_final, int packet_num){
-	for (int i = 0; i < ALLRULE; i++){
+void bv_gen(unsigned long int ** bv, int* bv_final, int packet_num){
+	for (int i = 0; i < ALLRULE / sizeof(unsigned long int); i++){
 		for (int j = 0; j < FIELD*(RULE+1); j++){
-			int randnum = rand()%2;
-			if(randnum == 1){
-				bv[j][i] = true;
-			}else{
-				bv[j][i] = false;
-			}
+			bv[j][i] = rand() % 100000;
 		}
 	}
 	for(int i = 0; i < packet_num; i++){
