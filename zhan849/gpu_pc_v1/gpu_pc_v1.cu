@@ -23,8 +23,8 @@
 #include <cublas.h>
 
 #define FIELD 15
-#define RULE 31
-#define ALLRULE 31
+#define RULE 255
+#define ALLRULE 900
 #define WSIZE 32
 
 #define cudaCheckErrors(msg) \
@@ -44,13 +44,63 @@ using namespace std;
 void header_gen(int**, int**, int, int);
 void tree_gen(int**, int, int);
 void bv_gen(bool**, int*, int);
-void data_test(int**, int**, bool**, int*, int);
+void data_test(int**, int**, bool**, int*, int, int);
+
+__global__ void packet_classify(int* gpu_tree, int* gpu_headers, bool* gpu_bv, int* gpu_bv_final, int* gpu_match_result, int packet_num, int block_dim){
+	__shared__ int gpu_tree_shared[FIELD*RULE];
+	//int* match_result = new int[packet_num * FIELD];
+	int level = 0;
+	while(level * block_dim + threadIdx.x < FIELD * RULE){
+		gpu_tree_shared[level * block_dim + threadIdx.x] = gpu_tree[level * block_dim + threadIdx.x];
+		level++;
+	}
+	__syncthreads();
+
+	if (blockDim.x * blockIdx.x + threadIdx.x < packet_num * FIELD){
+		int index = blockDim.x * blockIdx.x + threadIdx.x;
+		int tree_idx = index % FIELD * FIELD;
+		int i = 0;
+		while (i < RULE){
+			if (gpu_headers[index] <= gpu_tree_shared[tree_idx]){
+				i = 2 * i + 1;
+				tree_idx += i;
+			}else {
+				i = 2 * i + 2;
+				tree_idx += i;
+			}
+		}
+		gpu_match_result[index] = i - RULE;
+	}
+	__syncthreads();
+	
+	//if ((blockDim.x * blockIdx.x + threadIdx.x)% 15 == 0){
+	if (blockDim.x * blockIdx.x + threadIdx.x < packet_num * FIELD){
+		int index = blockDim.x * blockIdx.x + threadIdx.x;
+		int M = ALLRULE / FIELD;
+		bool result[ALLRULE/FIELD];
+		//int ruleIdx[FIELD];
+		for (int i = 0; i < M; i++){
+			result[i] = true;
+		}
+		for(int i = 0; i < M; i++){
+			for (int j = 0; j < FIELD; j++){
+				//printf("Packet %d, field %d, result_prev: %d, gpu_bv: %d\n", index/15, i, result[i], gpu_bv[gpu_match_result[index]*ALLRULE+j]);
+				result[i] = result[i] & gpu_bv[gpu_match_result[index - index % FIELD + j] * ALLRULE + index % FIELD * M + i];
+			}
+		}
+		for(int i = 0; i < M; i++){
+			if (result[i] == true){
+				//printf("threadidx: %d, M: %d, packet: %d, rule: %d\n", index, M, index/FIELD, index % FIELD * M + i);
+				gpu_bv_final[index/FIELD]= index % FIELD * M + i;
+				break;
+			}
+		}
+
+	}
 
 
 
-
-
-
+};
 
 
 int main(int argc, char** argv){
@@ -84,10 +134,51 @@ int main(int argc, char** argv){
 			bv[i] = new bool[ALLRULE];
 		}
 	int* bv_final = new int[packet_num];
+	int* match_result = new int[packet_num * FIELD];
+
 	tree_gen(tree, FIELD, RULE);
 	header_gen(headers, tree, FIELD, packet_num);
 	bv_gen(bv, bv_final, packet_num);
-	data_test(tree, headers, bv, bv_final, packet_num);
+	
+	//data_test(tree, headers, bv, bv_final, packet_num, 3);
+
+/********************************************************
+*	Flatten All the 2D Arrays
+********************************************************/
+	int* tree_flatten = new int[RULE*FIELD];
+	int* headers_flatten = new int[packet_num*FIELD];
+	bool* bv_flatten = new bool[FIELD*(RULE+1)*ALLRULE];
+
+	for (int i = 0; i < FIELD; i++){
+		for (int j = 0; j < RULE; j++){
+			tree_flatten[i*RULE+j] = tree[i][j];
+		}
+	}
+	for (int i = 0; i < packet_num; i++){
+		for (int j = 0; j < FIELD; j++){
+			headers_flatten[i*FIELD + j] = headers[i][j];
+		}
+	}
+	for (int i = 0; i < FIELD*(RULE+1); i++){
+		for (int j = 0; j < ALLRULE; j++){
+			bv_flatten[i*ALLRULE+j] = bv[i][j];
+		}
+	}
+/********************************************************
+*	Declare cuda events for statistical purposes:
+*		1. time_memcpyH2D
+*		2. time_memcpyD2H
+*		3. time_pc
+********************************************************/
+	float time1, time2, time3;
+	cudaEvent_t time_memcpyH2D_start, time_memcpyH2D_stop, time_memcpyD2H_start, time_memcpyD2H_stop, time_comp_start, time_comp_stop;
+	cudaEventCreate(&time_memcpyH2D_start);
+	cudaEventCreate(&time_memcpyH2D_stop);
+	cudaEventCreate(&time_memcpyD2H_start);
+	cudaEventCreate(&time_memcpyD2H_stop);
+	cudaEventCreate(&time_comp_start);
+	cudaEventCreate(&time_comp_stop);
+
 
 /********************************************************
 *	Allocate Space in Device:
@@ -96,20 +187,92 @@ int main(int argc, char** argv){
 *		3. gpu_bv_final
 *		4. gpu_headers
 ********************************************************/
+	dim3 dimGrid(grid_dim,1);
+	dim3 dimBlock(block_dim,1);
+	int* gpu_tree;
+	int* gpu_headers;
+	int* gpu_bv_final;
+	int* gpu_match_result;
+	bool* gpu_bv;
+
+	cudaMalloc((void**)&gpu_tree, sizeof(int*)*size_t(FIELD*RULE));
+		cudaCheckErrors("cudaMalloc gpu_tree");
+	cudaMalloc((void**)&gpu_headers, sizeof(int)*FIELD*packet_num);
+		cudaCheckErrors("cudaMalloc gpu_headers");
+	cudaMalloc((void**)&gpu_bv, sizeof(bool)*(RULE+1)*ALLRULE);
+		cudaCheckErrors("cudaMalloc gpu_bv");
+	cudaMalloc((void**)&gpu_match_result, sizeof(int)*packet_num*FIELD);
+		cudaCheckErrors("cudaMalloc gpu_match_result");
+	cudaMalloc((void**)&gpu_bv_final, sizeof(int)*packet_num);
+		cudaCheckErrors("cudaMalloc gpu_bv_final");
+
+	cudaEventRecord(time_memcpyH2D_start, 0);
+	
+	cudaMemcpy(gpu_tree, tree_flatten, sizeof(int)*RULE*FIELD, cudaMemcpyHostToDevice);
+		cudaCheckErrors("cudaMemcpy gpu_tree");
+	cudaMemcpy(gpu_headers, headers_flatten, sizeof(int)*FIELD*packet_num, cudaMemcpyHostToDevice);
+		cudaCheckErrors("cudaMemcpy gpu_headers");
+	cudaMemcpy(gpu_bv, bv_flatten, sizeof(bool)*(RULE+1)*ALLRULE, cudaMemcpyHostToDevice);
+		cudaCheckErrors("cudaMemcpy gpu_bv");
+	cudaMemcpy(gpu_match_result, match_result, sizeof(int)*FIELD*packet_num, cudaMemcpyHostToDevice);
+		cudaCheckErrors("cudaMemcpy gpu_match_result");
+	cudaMemcpy(gpu_bv_final, bv_final, sizeof(int)*packet_num, cudaMemcpyHostToDevice);
+		cudaCheckErrors("cudaMemcpy gpu_bv_final");
+
+	cudaEventRecord(time_memcpyH2D_stop, 0);
+	cudaEventSynchronize(time_memcpyH2D_stop);
+	cudaEventElapsedTime(&time1, time_memcpyH2D_start, time_memcpyH2D_stop);
+	cudaEventDestroy(time_memcpyH2D_stop);
+	cudaEventDestroy(time_memcpyH2D_start);
+
+	cout<<endl<<"*	1. Time for memcpy H2D: "<<time1<<"ms, Total bytes copied: "<<sizeof(int)*RULE*FIELD + sizeof(int)*FIELD*packet_num + sizeof(bool)*(RULE+1)*ALLRULE/64 + sizeof(int)*packet_num<<endl;;
 
 
 
+/********************************************************
+*	Main Packet Classification Process:
+*		1. Function Call
+*		2. Timing
+*		3. Memory copy back (gpu_bv_final)
+********************************************************/
+
+	cudaEventRecord(time_comp_start, 0);
+
+	packet_classify<<<dimGrid, dimBlock>>>(gpu_tree, gpu_headers, gpu_bv, gpu_bv_final, gpu_match_result, packet_num, block_dim);
+	cudaCheckErrors("Kernel fail");
+
+	cudaEventRecord(time_comp_stop, 0);
+	cudaEventSynchronize(time_comp_stop);
+	cudaEventElapsedTime(&time2, time_comp_start, time_comp_stop);
+	cudaEventDestroy(time_comp_stop);
+	cudaEventDestroy(time_comp_start);
+	cout<<endl<<"*	2. Time for GPU computation: "<<time2<<"ms, GPU throughput: "<<packet_num/time2/1000<<" MPPS"<<endl;
 
 
+	cudaEventRecord(time_memcpyD2H_start, 0);
+	
+	cudaMemcpy(bv_final, gpu_bv_final, sizeof(int)*packet_num, cudaMemcpyDeviceToHost);
+	
+	cudaEventRecord(time_memcpyD2H_stop, 0);
+	cudaEventSynchronize(time_memcpyD2H_stop);
+	cudaEventElapsedTime(&time3, time_memcpyD2H_start, time_memcpyD2H_stop);
+	cudaEventDestroy(time_memcpyD2H_stop);
+	cudaEventDestroy(time_memcpyD2H_start);
+	cout<<endl<<"*	3. Time for memcpy H2D: "<<time3<<"ms, Total bytes copied: "<<sizeof(int)*packet_num<<endl<<endl;
 
-
-
+	//data_test(tree, headers, bv, bv_final, packet_num, 8);
 
 /********************************************************
 *	Clear Memory:
 *		1. Dynamic allocations on host
 *		2. cudaFrees
 ********************************************************/
+	cudaFree(gpu_tree);
+	cudaFree(gpu_bv);
+	cudaFree(gpu_headers);
+	cudaFree(gpu_bv_final);
+	cudaFree(gpu_match_result);
+
 	for (int i = 0; i < FIELD; i++){
 		delete tree[i];
 	}
@@ -123,6 +286,7 @@ int main(int argc, char** argv){
 	delete bv;
 	delete headers;
 	delete bv_final;
+	delete match_result;
 
 	return 0;
 }
@@ -140,63 +304,30 @@ void tree_gen(int** tree, int field, int rule){
 		}
 		int temp_index = rule-1, tree_index = rule -1, level = log(rule+1) / log(2);
 		int step_index = level;
-		cout<<"level: "<<level<<endl;
-		cout<<"Tree #"<<i<<": "<<endl;
 		while (step_index >= 1){
 			int step = pow(2, (level - step_index + 1));
 			while (temp_index >= 0){
-				cout<<"temp_index: "<<temp_index<<", tree_index: "<<tree_index<<", step_index: "<<step_index<<", step: "<<step<<", value: "<<temp[temp_index]<<endl;
 				tree[i][tree_index] = temp[temp_index];
 				temp_index -= step;
 				tree_index--;
 			}
 			step_index--;
 			temp_index = rule - 1 - (pow(2, level - step_index) - 1);
-			cout<<"New step_index = "<<step_index<<", New temp_index: "<<temp_index<<endl;
 		}
-		cout<<"end of tree#"<<i<<endl;
 	}
 }
 void header_gen(int** headers, int** tree, int field, int packet_num){
 	for (int i = 0; i < packet_num; i++){
 		for(int j = 0; j < field; j++){
-			headers[i][j] = rand() % 1000;
+			headers[i][j] = rand() % 6000;
 		}
-		//printf("check point 3.%d\n", i);
-	}
-	for (int i = 0; i < field; i++){
-		headers[0][i] = tree[i][12];
-		headers[1][i] = tree[i][20];
-		headers[2][i] = tree[i][100];
-		headers[3][i] = tree[i][116];
-		headers[4][i] = tree[i][234];
-		headers[5][i] = tree[i][101];
-		headers[6][i] = tree[i][28];
-		headers[7][i] = tree[i][209];
-		headers[8][i] = tree[i][131];
-		headers[9][i] = tree[i][190];
-		headers[10][i] = tree[i][57];
-		headers[11][i] = tree[i][155];
-		/*
-		headers[173][i] = tree[i][312];
-		headers[299][i] = tree[i][20];
-		headers[287][i] = tree[i][100];
-		headers[356][i] = tree[i][116];
-		headers[390][i] = tree[i][234];
-		headers[457][i] = tree[i][101];
-		headers[460][i] = tree[i][188];
-		headers[490][i] = tree[i][209];
-		headers[555][i] = tree[i][131];
-		headers[670][i] = tree[i][490];
-		headers[799][i] = tree[i][257];
-		headers[891][i] = tree[i][355];
-		*/
+	
 	}
 }
 void bv_gen(bool** bv, int* bv_final, int packet_num){
 	for (int i = 0; i < ALLRULE; i++){
 		for (int j = 0; j < FIELD*(RULE+1); j++){
-			int randnum = rand()%10;
+			int randnum = rand()%2;
 			if(randnum == 1){
 				bv[j][i] = true;
 			}else{
@@ -208,37 +339,49 @@ void bv_gen(bool** bv, int* bv_final, int packet_num){
 		bv_final[i] = -1;
 	}
 }
-void data_test(int** tree, int** headers, bool** bv, int* bv_final, int packet_num){
-	cout<<"Tree: "<<endl;
-	for(int i = 0; i < RULE; i++){
-		cout<<"Line: "<<i<<": ";
-		for(int j = 0; j < FIELD; j++){
-			cout<<tree[j][i]<<" ";
+void data_test(int** tree, int** headers, bool** bv, int* bv_final, int packet_num, int type){
+	if (type > 15 | type == 0){
+		return;
+	}
+	if (type % 2 == 1){
+		cout<<"Tree: "<<endl;
+		for(int i = 0; i < RULE; i++){
+			cout<<"Line: "<<i<<": ";
+			for(int j = 0; j < FIELD; j++){
+				cout<<tree[j][i]<<" ";
+			}
+			cout<<endl;
 		}
-		cout<<endl;
+	}
+	if (type % 4 == 2 | type % 4 == 3){
+		cout<<endl<<"Headers: "<<endl;
+		for(int i = 0; i < packet_num; i++){
+			cout<<"Header "<<i<<": ";
+			for(int j = 0; j < FIELD; j++){
+				cout<<headers[i][j]<<" ";
+			}
+			cout<<endl;
+		}
+	}
+	if (type % 8 == 4 | type % 8 == 5 | type % 8 == 6 | type % 8 == 7){
+		cout<<endl<<"bv: "<<endl;
+		for(int i = 0; i < ALLRULE; i++){
+			cout<<"Line "<<i<<": ";
+			for (int j = 0; j < FIELD*(RULE+1); j++){
+			cout<<bv[j][i]<<" ";
+			}
+			cout<<endl;
+		}
 	}
 
-	cout<<endl<<"Headers: "<<endl;
-	for(int i = 0; i < packet_num; i++){
-		cout<<"Header "<<i<<": ";
-		for(int j = 0; j < FIELD; j++){
-			cout<<headers[i][j]<<" ";
+	if (type > 7){
+		cout<<endl<<"bv_final: "<<endl;
+		for(int i = 0; i < packet_num; i++){
+			cout<<bv_final[i]<<" ";
 		}
 		cout<<endl;
 	}
-	cout<<endl<<"bv: "<<endl;
-	for(int i = 0; i < ALLRULE; i++){
-		cout<<"Line "<<i<<": ";
-		for (int j = 0; j < FIELD*(RULE+1); j++){
-		cout<<bv[j][i]<<" ";
-		}
-		cout<<endl;
-	}
-	cout<<endl<<"bv_final: "<<endl;
-	for(int i = 0; i < packet_num; i++){
-		cout<<bv_final[i]<<" ";
-	}
-	cout<<endl;
+	cout<<"============== End of Print =============="<<endl;
 }
 
 
