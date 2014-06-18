@@ -66,21 +66,21 @@ __global__ void packet_classify(int* gpu_tree, int* gpu_headers, int* gpu_match_
 __global__ void packet_merge(long int* gpu_bv, int* gpu_match_result, long int* gpu_merge_result, long int*gpu_bv_final, int packet_num, int block_dim){
 	int index = blockDim.x * blockIdx.x + threadIdx.x;
 	int packetIdx = index/int_count;
-	gpu_merge_result[index] = gpu_bv[gpu_match_result[packetIdx]*int_count + index%int_count] &
-							  gpu_bv[gpu_match_result[packetIdx+1]*int_count + index%int_count] &
-							  gpu_bv[gpu_match_result[packetIdx+2]*int_count + index%int_count] &
-							  gpu_bv[gpu_match_result[packetIdx+3]*int_count + index%int_count] &
-							  gpu_bv[gpu_match_result[packetIdx+4]*int_count + index%int_count] &
-							  gpu_bv[gpu_match_result[packetIdx+5]*int_count + index%int_count] &
-							  gpu_bv[gpu_match_result[packetIdx+6]*int_count + index%int_count] &
-							  gpu_bv[gpu_match_result[packetIdx+7]*int_count + index%int_count] &
-							  gpu_bv[gpu_match_result[packetIdx+8]*int_count + index%int_count] &
-							  gpu_bv[gpu_match_result[packetIdx+9]*int_count + index%int_count] &
-							  gpu_bv[gpu_match_result[packetIdx+10]*int_count + index%int_count] &
-							  gpu_bv[gpu_match_result[packetIdx+11]*int_count + index%int_count] &
-							  gpu_bv[gpu_match_result[packetIdx+12]*int_count + index%int_count] &
-							  gpu_bv[gpu_match_result[packetIdx+13]*int_count + index%int_count] &
-							  gpu_bv[gpu_match_result[packetIdx+14]*int_count + index%int_count];
+	gpu_merge_result[index] = gpu_bv[gpu_match_result[packetIdx*15]*int_count + index%int_count] &
+							  gpu_bv[gpu_match_result[packetIdx*15+1]*int_count + index%int_count] &
+							  gpu_bv[gpu_match_result[packetIdx*15+2]*int_count + index%int_count] &
+							  gpu_bv[gpu_match_result[packetIdx*15+3]*int_count + index%int_count] &
+							  gpu_bv[gpu_match_result[packetIdx*15+4]*int_count + index%int_count] &
+							  gpu_bv[gpu_match_result[packetIdx*15+5]*int_count + index%int_count] &
+							  gpu_bv[gpu_match_result[packetIdx*15+6]*int_count + index%int_count] &
+							  gpu_bv[gpu_match_result[packetIdx*15+7]*int_count + index%int_count] &
+							  gpu_bv[gpu_match_result[packetIdx*15+8]*int_count + index%int_count] &
+							  gpu_bv[gpu_match_result[packetIdx*15+9]*int_count + index%int_count] &
+							  gpu_bv[gpu_match_result[packetIdx*15+10]*int_count + index%int_count] &
+							  gpu_bv[gpu_match_result[packetIdx*15+11]*int_count + index%int_count] &
+							  gpu_bv[gpu_match_result[packetIdx*15+12]*int_count + index%int_count] &
+							  gpu_bv[gpu_match_result[packetIdx*15+13]*int_count + index%int_count] &
+							  gpu_bv[gpu_match_result[packetIdx*15+14]*int_count + index%int_count];
 
 	__syncthreads();
 
@@ -125,8 +125,6 @@ __global__ void packet_merge(long int* gpu_bv, int* gpu_match_result, long int* 
 };
 
 int main(int argc, char** argv){
-	cout<<ALLRULE<<" "<< sizeof(long int)<<endl;
-	cout<<int_count<<endl;
 	if(argc!=6){
 		cout<<"usage ./openflow  *Packet_num   *Grid_dim   *Block_dim   *Grid_dim_merge   *Block_dim_merge"<<endl; 
 		return 0;
@@ -294,7 +292,7 @@ cout<<"============================ Experiment Starts ==========================
 	cudaEventElapsedTime(&time3, time_search_memcpyD2H_start, time_search_memcpyD2H_stop);
 	cudaEventDestroy(time_search_memcpyD2H_stop);
 	cudaEventDestroy(time_search_memcpyD2H_start);
-	cout<<endl<<"*	3. Time for memcpy H2D: "<<time3<<"ms, Total bytes copied: "<<endl;
+	cout<<endl<<"*	3. Time for memcpy D2H: "<<time3<<"ms, Total bytes copied: "<<endl;
 	cout<<"    		-> Match_result: "<< sizeof(int)*packet_num*FIELD<<" Bytes"<<endl<<endl;
 
 	//data_test(tree, headers, bv, bv_final, packet_num, 8);
@@ -365,17 +363,18 @@ cout<<"============================ Experiment Starts ==========================
 	cudaEventRecord(time_merge_memcpyD2H_start, 0);
 	
 	cudaMemcpy(bv_final, gpu_bv_final, sizeof(long int)*packet_num, cudaMemcpyDeviceToHost);
+		cudaCheckErrors("Cuda Memcpy D2H merge fail");
 	
 	cudaEventRecord(time_merge_memcpyD2H_stop, 0);
 	cudaEventSynchronize(time_merge_memcpyD2H_stop);
 	cudaEventElapsedTime(&time6, time_merge_memcpyD2H_start, time_merge_memcpyD2H_stop);
 	cudaEventDestroy(time_merge_memcpyD2H_stop);
 	cudaEventDestroy(time_merge_memcpyD2H_start);
-	cout<<endl<<"*	3. Time for memcpy H2D: "<<time6<<"ms, Total bytes copied: "<<endl;
+	cout<<endl<<"*	3. Time for memcpy D2H: "<<time6<<"ms, Total bytes copied: "<<endl;
 	cout<<"    		-> bv_final: "<< sizeof(long int)*packet_num<<" Bytes"<<endl<<endl;
 
 
--
+
 /********************************************************
 *	Clear Memory:
 *		1. Dynamic allocations on host
