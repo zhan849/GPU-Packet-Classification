@@ -36,7 +36,7 @@ int main(){
 		array4[i] = array1[i] & array2[i] & array3[i];
 		cout<<array1[i]<<" "<<array2[i]<<" "<<array3[i]<<" "<<array4[i]<<endl;
 	}
-	cout<<"size test: "<<sizeof(int)<<" "<<sizeof(bool)*8<<" "<<sizeof(char)<<" "<<sizeof(unsigned long long int)<<" "<<sizeof(string)<<endl;
+	cout<<"size test: "<<sizeof(int)<<" "<<sizeof(bool)*8<<" "<<sizeof(char)<<" "<<sizeof( long int)<<" "<<sizeof(string)<<endl;
 
 	return 0;
 }
