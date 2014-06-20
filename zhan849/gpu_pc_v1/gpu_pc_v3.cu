@@ -138,10 +138,10 @@ int main(int argc, char** argv){
 		cout<<"ERROR: Total number of threads in stage 1 must equal packet_num * FIELD"<<endl;
 		return 1;
 	}
-	if (grid_dim_merge * block_dim_merge != packet_num * int_count){
-		cout<<"ERROR: Total number of threads in stage 2 must equal packet_num * int_count"<<endl;
-		return 1;
-	}
+//	if (grid_dim_merge * block_dim_merge != packet_num * int_count){
+//		cout<<"ERROR: Total number of threads in stage 2 must equal packet_num * int_count"<<endl;
+//		return 1;
+//	}
 cout<<"============================ Experiment Starts ============================"<<endl;
 //	cout<<"grid_dim: "<<grid_dim<<", block_dim: "<<block_dim<<", packet_num: "<<packet_num;
 //	cout<<", grid_dim_merge: "<<grid_dim_merge<<", block_dim_merge: "<<block_dim_merge<<endl;
@@ -421,6 +421,8 @@ cout<<"============================ Experiment Starts ==========================
 	cudaEventDestroy(time_clean_start);
 	cout<<endl<<"*	4. Time for cleaning memory: "<<time7<<"ms."<<endl<<endl;
 
+	cout<<">>>>>> Total time used: "<<time1 + time2 + time3 + time4 + time5 + time6 + time7<<" ms"<<endl;
+	cout<<">>>>>> Total throughput: "<<packet_num / (time1 + time2 + time3 + time4 + time5 + time6 + time7) / 1000<<" MPPS"<<endl;
 
 
 cout<<"============================ Experiment Ends ============================"<<endl;
