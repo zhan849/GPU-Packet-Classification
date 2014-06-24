@@ -22,9 +22,9 @@
 #include <math.h>
 #include <cublas.h>
 
-#define FIELD 15
-#define RULE 511
-#define ALLRULE 32768
+#define FIELD 5
+#define RULE 15
+#define ALLRULE 512
 #define WSIZE 32
 #define int_count ALLRULE / (sizeof(long int) * 8)
 
@@ -73,62 +73,60 @@ __global__ void packet_classify(int* gpu_tree, int* gpu_headers, int* gpu_match_
 // };
 // __global__ void packet_merge(long int* gpu_bv, int* gpu_match_result, long int* gpu_merge_result, long int*gpu_bv_final, int packet_num, int block_dim){
 // // __global__ void packet_merge(long int* gpu_bv, long int* gpu_merge_result, long int*gpu_bv_final){
-	if (index < packet_num * int_count){
 	int packetIdx = index/int_count;
 	gpu_merge_result[index] = gpu_bv[gpu_match_result[packetIdx*15]*int_count + index%int_count] &
 							  gpu_bv[gpu_match_result[packetIdx*15+1]*int_count + index%int_count] &
 							  gpu_bv[gpu_match_result[packetIdx*15+2]*int_count + index%int_count] &
 							  gpu_bv[gpu_match_result[packetIdx*15+3]*int_count + index%int_count] &
-							  gpu_bv[gpu_match_result[packetIdx*15+4]*int_count + index%int_count] &
-							  gpu_bv[gpu_match_result[packetIdx*15+5]*int_count + index%int_count] &
-							  gpu_bv[gpu_match_result[packetIdx*15+6]*int_count + index%int_count] &
-							  gpu_bv[gpu_match_result[packetIdx*15+7]*int_count + index%int_count] &
-							  gpu_bv[gpu_match_result[packetIdx*15+8]*int_count + index%int_count] &
-							  gpu_bv[gpu_match_result[packetIdx*15+9]*int_count + index%int_count] &
-							  gpu_bv[gpu_match_result[packetIdx*15+10]*int_count + index%int_count] &
-							  gpu_bv[gpu_match_result[packetIdx*15+11]*int_count + index%int_count] &
-							  gpu_bv[gpu_match_result[packetIdx*15+12]*int_count + index%int_count] &
-							  gpu_bv[gpu_match_result[packetIdx*15+13]*int_count + index%int_count] &
-							  gpu_bv[gpu_match_result[packetIdx*15+14]*int_count + index%int_count];
+							  gpu_bv[gpu_match_result[packetIdx*15+4]*int_count + index%int_count];// &
+							  // gpu_bv[gpu_match_result[packetIdx*15+5]*int_count + index%int_count] &
+							  // gpu_bv[gpu_match_result[packetIdx*15+6]*int_count + index%int_count] &
+							  // gpu_bv[gpu_match_result[packetIdx*15+7]*int_count + index%int_count] &
+							  // gpu_bv[gpu_match_result[packetIdx*15+8]*int_count + index%int_count] &
+							  // gpu_bv[gpu_match_result[packetIdx*15+9]*int_count + index%int_count] &
+							  // gpu_bv[gpu_match_result[packetIdx*15+10]*int_count + index%int_count] &
+							  // gpu_bv[gpu_match_result[packetIdx*15+11]*int_count + index%int_count] &
+							  // gpu_bv[gpu_match_result[packetIdx*15+12]*int_count + index%int_count] &
+							  // gpu_bv[gpu_match_result[packetIdx*15+13]*int_count + index%int_count] &
+							  // gpu_bv[gpu_match_result[packetIdx*15+14]*int_count + index%int_count];
+
+	__syncthreads();
+
+	if (blockDim.x * blockIdx.x + threadIdx.x < packet_num){
+		gpu_bv_final[blockDim.x*blockIdx.x+threadIdx.x] = gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)*int_count] & 
+														  gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)*int_count+1] &
+														  gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+2] &
+														  gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+3] &
+														  gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+4] &
+														  gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+5] &
+														  gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+6] &
+														  gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+7];// &
+														  // gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+8] &
+														  // gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)*int_count+9] &
+														  // gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+10] &
+														  // gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+11] &
+														  // gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+12] &
+														  // gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+13] &
+														  // gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+14] &
+														  // gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+15] &
+														  // gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+16] &
+														  // gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)*int_count+17] &
+														  // gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+18] &
+														  // gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+19] &
+														  // gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+20] &
+														  // gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+21] &
+														  // gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+22] &
+														  // gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+23] &
+														  // gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+24] &
+														  // gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)*int_count+25] &
+														  // gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+26] &
+														  // gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+27] &
+														  // gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+28] &
+														  // gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+29] &
+														  // gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+30] &
+														  // gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+31];
+
 	}
-
-	// __syncthreads();
-
-	// if (blockDim.x * blockIdx.x + threadIdx.x < packet_num){
-	// 	gpu_bv_final[blockDim.x*blockIdx.x+threadIdx.x] = gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)*int_count] & 
-	// 													  gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)*int_count+1] &
-	// 													  gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+2] &
-	// 													  gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+3] &
-	// 													  gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+4] &
-	// 													  gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+5] &
-	// 													  gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+6] &
-	// 													  gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+7] &
-	// 													  gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+8] &
-	// 													  gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)*int_count+9] &
-	// 													  gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+10] &
-	// 													  gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+11] &
-	// 													  gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+12] &
-	// 													  gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+13] &
-	// 													  gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+14] &
-	// 													  gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+15] &
-	// 													  gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+16] &
-	// 													  gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)*int_count+17] &
-	// 													  gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+18] &
-	// 													  gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+19] &
-	// 													  gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+20] &
-	// 													  gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+21] &
-	// 													  gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+22] &
-	// 													  gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+23] &
-	// 													  gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+24] &
-	// 													  gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)*int_count+25] &
-	// 													  gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+26] &
-	// 													  gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+27] &
-	// 													  gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+28] &
-	// 													  gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+29] &
-	// 													  gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+30] &
-	// 													  gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+31];
-
-	
 	
 	
 
@@ -150,10 +148,10 @@ int main(int argc, char** argv){
 	// 	cout<<"ERROR: Total number of threads in stage 1 must equal packet_num * FIELD"<<endl;
 	// 	return 1;
 	// }
-	// if (argv[2] * argv[3] != packet_num * int_count){
-	// 	cout<<"ERROR: Total number of threads in stage 2 must equal packet_num * int_count"<<endl;
-	// 	return 1;
-	// }
+	if (grid_dim_merge * block_dim_merge != packet_num * int_count){
+		cout<<"ERROR: Total number of threads in stage 2 must equal packet_num * int_count"<<endl;
+		return 1;
+	}
 cout<<"============================ Experiment Starts ============================"<<endl;
 //	cout<<"grid_dim: "<<grid_dim<<", block_dim: "<<block_dim<<", packet_num: "<<packet_num;
 //	cout<<", grid_dim_merge: "<<grid_dim_merge<<", block_dim_merge: "<<block_dim_merge<<endl;
@@ -215,14 +213,16 @@ cout<<"============================ Experiment Starts ==========================
 *		2. time_memcpyD2H
 *		3. time_pc
 ********************************************************/
-	float time1, time2, time3, time4;
-	cudaEvent_t time_search_memcpyH2D_start, time_search_memcpyH2D_stop, time_merge_memcpyD2H_start, time_merge_memcpyD2H_stop, time_comp_start, time_comp_stop;
+	float time0, time1, time2, time3, time4;
+	cudaEvent_t time_search_memcpyH2D_start, time_search_memcpyH2D_stop, time_merge_memcpyD2H_start, time_merge_memcpyD2H_stop, time_comp_start, time_comp_stop, time_exp_start,time_exp_stop;
 	cudaEventCreate(&time_search_memcpyH2D_start);
 	cudaEventCreate(&time_search_memcpyH2D_stop);
 	cudaEventCreate(&time_merge_memcpyD2H_start);
 	cudaEventCreate(&time_merge_memcpyD2H_stop);
 	cudaEventCreate(&time_comp_start);
 	cudaEventCreate(&time_comp_stop);
+	cudaEventCreate(&time_exp_start);
+	cudaEventCreate(&time_exp_stop);
 
 
 /********************************************************
@@ -256,6 +256,7 @@ cout<<"============================ Experiment Starts ==========================
 	cudaMalloc((void**)&gpu_bv_final, sizeof(long int)*packet_num);
 		cudaCheckErrors("cudaMalloc gpu_bv_final");
 
+	cudaEventRecord(time_exp_start, 0);
 	cudaEventRecord(time_search_memcpyH2D_start, 0);
 	
 	cudaMemcpy(gpu_tree, tree_flatten, sizeof(int)*RULE*FIELD, cudaMemcpyHostToDevice);
@@ -271,7 +272,7 @@ cout<<"============================ Experiment Starts ==========================
 	cudaEventDestroy(time_search_memcpyH2D_stop);
 	cudaEventDestroy(time_search_memcpyH2D_start);
 	cout<<endl<<"Number of Packets: "<<packet_num<<endl;
-	cout<<endl<<">>>>>>[Stage 1: Search] "<<"grid_dim: "<<grid_dim_merge<<", block_dim: "<<block_dim_merge<<endl;
+	cout<<endl<<">>>>>> "<<"grid_dim: "<<grid_dim_merge<<", block_dim: "<<block_dim_merge<<endl;
 	cout<<endl<<"*	1. Time for memcpy H2D: "<<time1<<"ms, Total bytes copied: "<<endl;
 	cout<<"    		-> Tree: "<< sizeof(int)*RULE*FIELD<<" Bytes"<<endl;
 	cout<<"    		-> Headers: "<< sizeof(int)*FIELD*packet_num<<" Bytes"<<endl;
@@ -395,6 +396,12 @@ cout<<"============================ Experiment Starts ==========================
 	cout<<endl<<"*	3. Time for memcpy D2H: "<<time3<<"ms, Total bytes copied: "<<endl;
 	cout<<"    		-> bv_final: "<< sizeof(long int)*packet_num<<" Bytes"<<endl<<endl;
 
+	cudaEventRecord(time_exp_stop, 0);
+	cudaEventSynchronize(time_exp_stop);
+	cudaEventElapsedTime(&time0, time_exp_start, time_exp_stop);
+	cudaEventDestroy(time_exp_start);
+	cudaEventDestroy(time_exp_stop);
+	cout<<endl<<"*	Total Time for the Experiment: "<<time0<<"ms, throughput: "<<packet_num/time0/1000<<" MPPS"<<endl;
 
 
 /********************************************************
@@ -444,7 +451,7 @@ cout<<"============================ Experiment Starts ==========================
 	cudaEventElapsedTime(&time4, time_clean_start, time_clean_stop);
 	cudaEventDestroy(time_clean_stop);
 	cudaEventDestroy(time_clean_start);
-	cout<<endl<<"*	4. Time for cleaning memory: "<<time4<<"ms."<<endl<<endl;
+	//cout<<endl<<"*	4. Time for cleaning memory: "<<time4<<"ms."<<endl<<endl;
 
 
 

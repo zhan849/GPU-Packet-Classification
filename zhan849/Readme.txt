@@ -7,3 +7,14 @@ Here the matrix multiplication is done block by block. So, 1 block each of Matri
 
 Q.2
 In this case, there are 15 threads per block and there are 69 blocks. So, total 1035 threads are used. Each thread will work on 4 packets except the threads in the last few blocks. The number 15 is used because. there are 15 data items to be brought from the global memory to shared memory. So, in 1 cycle all the 15 items are brought. Similarly, the remaining data items are brought and then threads are synchronized. Now, the threads access their data using the index based on block Id and Dim, thread Id and Dim. To make sure, we do not access data beyond 4096 (because 1035 x 4 = 4140), the threads whose data location is beyond 4095 are made to go to sleep. This happens only in the last iteration and for the last few blocks. To search, if there is a match, local variables are used and a binary search is performed. First field is searched and then the search is done for the 2nd field. And the final Bitvector is saved in the global memory. 
+
+
+Files instruction:
+Folder:
+gpu_v1: everything on GPU
+	file: v2: search and merge in one kernel
+	      v3: search and merge separately
+gpu_v2: GPU search, CPU merge
+	file: v1: garbage
+	      v2: one thread per packet
+	      v3: one thread for all packets
