@@ -73,23 +73,42 @@ __global__ void packet_classify(int* gpu_tree, int* gpu_headers, int* gpu_match_
 // };
 // __global__ void packet_merge(long int* gpu_bv, int* gpu_match_result, long int* gpu_merge_result, long int*gpu_bv_final, int packet_num, int block_dim){
 // // __global__ void packet_merge(long int* gpu_bv, long int* gpu_merge_result, long int*gpu_bv_final){
-	if (index < packet_num * int_count){
+	if (index < packet_num * int_count / 2){
 	int packetIdx = index/int_count;
-	gpu_merge_result[index] = gpu_bv[gpu_match_result[packetIdx*15]*int_count + index%int_count] &
-							  gpu_bv[gpu_match_result[packetIdx*15+1]*int_count + index%int_count] &
-							  gpu_bv[gpu_match_result[packetIdx*15+2]*int_count + index%int_count] &
-							  gpu_bv[gpu_match_result[packetIdx*15+3]*int_count + index%int_count] &
-							  gpu_bv[gpu_match_result[packetIdx*15+4]*int_count + index%int_count] &
-							  gpu_bv[gpu_match_result[packetIdx*15+5]*int_count + index%int_count] &
-							  gpu_bv[gpu_match_result[packetIdx*15+6]*int_count + index%int_count] &
-							  gpu_bv[gpu_match_result[packetIdx*15+7]*int_count + index%int_count] &
-							  gpu_bv[gpu_match_result[packetIdx*15+8]*int_count + index%int_count] &
-							  gpu_bv[gpu_match_result[packetIdx*15+9]*int_count + index%int_count] &
-							  gpu_bv[gpu_match_result[packetIdx*15+10]*int_count + index%int_count] &
-							  gpu_bv[gpu_match_result[packetIdx*15+11]*int_count + index%int_count] &
-							  gpu_bv[gpu_match_result[packetIdx*15+12]*int_count + index%int_count] &
-							  gpu_bv[gpu_match_result[packetIdx*15+13]*int_count + index%int_count] &
-							  gpu_bv[gpu_match_result[packetIdx*15+14]*int_count + index%int_count];
+	gpu_merge_result[index] = gpu_bv[gpu_match_result[packetIdx*FIELD]*int_count + index%int_count] &
+							  gpu_bv[gpu_match_result[packetIdx*FIELD+1]*int_count + index%int_count] &
+							  gpu_bv[gpu_match_result[packetIdx*FIELD+2]*int_count + index%int_count] &
+							  gpu_bv[gpu_match_result[packetIdx*FIELD+3]*int_count + index%int_count] &
+							  gpu_bv[gpu_match_result[packetIdx*FIELD+4]*int_count + index%int_count] &
+							  gpu_bv[gpu_match_result[packetIdx*FIELD+5]*int_count + index%int_count] &
+							  gpu_bv[gpu_match_result[packetIdx*FIELD+6]*int_count + index%int_count] &
+							  gpu_bv[gpu_match_result[packetIdx*FIELD+7]*int_count + index%int_count] &
+							  gpu_bv[gpu_match_result[packetIdx*FIELD+8]*int_count + index%int_count] &
+							  gpu_bv[gpu_match_result[packetIdx*FIELD+9]*int_count + index%int_count] &
+							  gpu_bv[gpu_match_result[packetIdx*FIELD+10]*int_count + index%int_count] &
+							  gpu_bv[gpu_match_result[packetIdx*FIELD+11]*int_count + index%int_count] &
+							  gpu_bv[gpu_match_result[packetIdx*FIELD+12]*int_count + index%int_count] &
+							  gpu_bv[gpu_match_result[packetIdx*FIELD+13]*int_count + index%int_count] &
+							  gpu_bv[gpu_match_result[packetIdx*FIELD+14]*int_count + index%int_count];
+
+	gpu_merge_result[index + packet_num * int_count / 2] = 
+							  gpu_bv[gpu_match_result[(packetIdx+packet_num/2)*FIELD]*int_count + index%int_count] &
+							  gpu_bv[gpu_match_result[(packetIdx+packet_num/2)*FIELD+1]*int_count + index%int_count] &
+							  gpu_bv[gpu_match_result[(packetIdx+packet_num/2)*FIELD+2]*int_count + index%int_count] &
+							  gpu_bv[gpu_match_result[(packetIdx+packet_num/2)*FIELD+3]*int_count + index%int_count] &
+							  gpu_bv[gpu_match_result[(packetIdx+packet_num/2)*FIELD+4]*int_count + index%int_count] &
+							  gpu_bv[gpu_match_result[(packetIdx+packet_num/2)*FIELD+5]*int_count + index%int_count] &
+							  gpu_bv[gpu_match_result[(packetIdx+packet_num/2)*FIELD+6]*int_count + index%int_count] &
+							  gpu_bv[gpu_match_result[(packetIdx+packet_num/2)*FIELD+7]*int_count + index%int_count] &
+							  gpu_bv[gpu_match_result[(packetIdx+packet_num/2)*FIELD+8]*int_count + index%int_count] &
+							  gpu_bv[gpu_match_result[(packetIdx+packet_num/2)*FIELD+9]*int_count + index%int_count] &
+							  gpu_bv[gpu_match_result[(packetIdx+packet_num/2)*FIELD+10]*int_count + index%int_count] &
+							  gpu_bv[gpu_match_result[(packetIdx+packet_num/2)*FIELD+11]*int_count + index%int_count] &
+							  gpu_bv[gpu_match_result[(packetIdx+packet_num/2)*FIELD+12]*int_count + index%int_count] &
+							  gpu_bv[gpu_match_result[(packetIdx+packet_num/2)*FIELD+13]*int_count + index%int_count] &
+							  gpu_bv[gpu_match_result[(packetIdx+packet_num/2)*FIELD+14]*int_count + index%int_count];
+
+	
 	}
 
 	// __syncthreads();
@@ -215,14 +234,16 @@ cout<<"============================ Experiment Starts ==========================
 *		2. time_memcpyD2H
 *		3. time_pc
 ********************************************************/
-	float time1, time2, time3, time4;
-	cudaEvent_t time_search_memcpyH2D_start, time_search_memcpyH2D_stop, time_merge_memcpyD2H_start, time_merge_memcpyD2H_stop, time_comp_start, time_comp_stop;
+	float time0, time1, time2, time3, time4;
+	cudaEvent_t time_search_memcpyH2D_start, time_search_memcpyH2D_stop, time_merge_memcpyD2H_start, time_merge_memcpyD2H_stop, time_comp_start, time_comp_stop,time_exp_start,time_exp_stop;
 	cudaEventCreate(&time_search_memcpyH2D_start);
 	cudaEventCreate(&time_search_memcpyH2D_stop);
 	cudaEventCreate(&time_merge_memcpyD2H_start);
 	cudaEventCreate(&time_merge_memcpyD2H_stop);
 	cudaEventCreate(&time_comp_start);
 	cudaEventCreate(&time_comp_stop);
+	cudaEventCreate(&time_exp_start);
+	cudaEventCreate(&time_exp_stop);
 
 
 /********************************************************
@@ -256,6 +277,7 @@ cout<<"============================ Experiment Starts ==========================
 	cudaMalloc((void**)&gpu_bv_final, sizeof(long int)*packet_num);
 		cudaCheckErrors("cudaMalloc gpu_bv_final");
 
+	cudaEventRecord(time_exp_start, 0);
 	cudaEventRecord(time_search_memcpyH2D_start, 0);
 	
 	cudaMemcpy(gpu_tree, tree_flatten, sizeof(int)*RULE*FIELD, cudaMemcpyHostToDevice);
@@ -295,6 +317,7 @@ cout<<"============================ Experiment Starts ==========================
 	cudaEventRecord(time_comp_start, 0);
 	packet_classify<<<dimGrid_merge, dimBlock_merge>>>(gpu_tree, gpu_headers, gpu_match_result, packet_num, block_dim_merge, gpu_bv, gpu_merge_result, gpu_bv_final);
 	cudaCheckErrors("Computation fail");
+	cudaThreadSynchronize();
 
 	cudaEventRecord(time_comp_stop, 0);
 	cudaEventSynchronize(time_comp_stop);
@@ -394,6 +417,14 @@ cout<<"============================ Experiment Starts ==========================
 	cudaEventDestroy(time_merge_memcpyD2H_start);
 	cout<<endl<<"*	3. Time for memcpy D2H: "<<time3<<"ms, Total bytes copied: "<<endl;
 	cout<<"    		-> bv_final: "<< sizeof(long int)*packet_num<<" Bytes"<<endl<<endl;
+
+
+	cudaEventRecord(time_exp_stop, 0);
+	cudaEventSynchronize(time_exp_stop);
+	cudaEventElapsedTime(&time0, time_exp_start, time_exp_stop);
+	cudaEventDestroy(time_exp_start);
+	cudaEventDestroy(time_exp_stop);
+	cout<<endl<<"*	Total Time for the Experiment: "<<time0<<"ms, throughput: "<<packet_num/time0/1000<<" MPPS"<<endl;
 
 
 
