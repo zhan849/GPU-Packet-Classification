@@ -25,12 +25,12 @@ using namespace std;
 
 int main(int argc, char** argv){
     if(argc!=4){
-        cout<<"usage ./openflow  *Packet_num   *Grid_dim   *Block_dim   *Grid_dim_merge   *Block_dim_merge"<<endl; 
+        cout<<"usage ./openflow  *Packet_num   *Grid_dim   *Block_dim   *BATCH"<<endl; 
         return 0;
     }
     int packet_num = atoi(argv[1]);
     int grid_dim = atoi(argv[2]);
-    int block_dim = atoi(argv[3]);
+    int BATCH = atoi(argv[3]);
     if (grid_dim*block_dim != packet_num*FIELD){
         cout<<"ERROR: Total number of threads in stage 1 must equal packet_num * FIELD"<<endl;
         return 1;
@@ -42,7 +42,7 @@ int main(int argc, char** argv){
     Stage1_Data S1;
     Stage2_Data S2;
     S1.packet_num = packet_num;
-    S1.block_dim = block_dim;
+
 /********************************************************
 *   Preparing Data:
 *       1. Generate random header
@@ -63,9 +63,9 @@ int main(int argc, char** argv){
         for(int i = 0; i < FIELD*(RULE+1); i++){
             bv[i] = new long int[int_count];
         }
-    S2.bv_final = new long int[packet_num];
+    S2.bv_final = new long int[packet_num * int_count];
     S2.match_result = new int[packet_num * FIELD];
-    S2.merge_result_partial = new long int[int_count*packet_num];
+    //S2.merge_result_partial = new long int[int_count*packet_num];
 
     tree_gen(tree, FIELD, RULE);
     header_gen(header, tree, FIELD, packet_num);
@@ -76,7 +76,7 @@ int main(int argc, char** argv){
 ********************************************************/
     S1.tree = new int[RULE*FIELD];
     S1.header = new int[packet_num*FIELD];
-    S2.bv = new long int[FIELD*(RULE+1) * int_count];
+    //S2.bv = new long int[FIELD*(RULE+1) * int_count];
 
     for (int i = 0; i < FIELD; i++){
         for (int j = 0; j < RULE; j++){
@@ -88,23 +88,23 @@ int main(int argc, char** argv){
             S1.header[i*packet_num + j] = header[i][j];
         }
     }
-    for (int i = 0; i < FIELD*(RULE+1); i++){
-        for (int j = 0; j < int_count; j++){
-            S2.bv[ i * int_count + j] = bv[i][j];
-        }
-    }
+    //for (int i = 0; i < FIELD*(RULE+1); i++){
+    //    for (int j = 0; j < int_count; j++){
+    //        S2.bv[ i * int_count + j] = bv[i][j];
+    //    }
+   // }
 
 /********************************************************
 *   Setup Timers:
 *       1. GPU Timer
 *       2. CPU Timer
 ********************************************************/
-    float time1, time2, time3, time4 = 0, time5 = 0, time6 = 0;
+    float time1 = 0, time2 = 0, time3 = 0, time4 = 0, time5 = 0;
     cudaEvent_t time_search_memcpyH2D_start, time_search_memcpyH2D_stop, 
-                time_search_memcpyD2H_start, time_search_memcpyD2H_stop, 
-                time_gpu_start, time_gpu_stop;
-    struct timespec thread_prep_start, thread_prep_stop, cpu_merge_start, cpu_merge_stop, 
-           thread_join_start, thread_join_stop;
+                    time_search_memcpyD2H_start, time_search_memcpyD2H_stop, 
+                    time_gpu_start, time_gpu_stop;
+    struct timespec thread_prep_start, thread_prep_stop, cpu_merge_start, cpu_merge_stop; 
+//           thread_join_start, thread_join_stop;
 
     cudaEventCreate(&time_search_memcpyH2D_start);
     cudaEventCreate(&time_search_memcpyH2D_stop);
@@ -135,11 +135,20 @@ int main(int argc, char** argv){
     
     cudaEventRecord(time_search_memcpyH2D_start, 0);
 
+//    if (clock_gettime(CLOCK_REALTIME, &time_search_memcpyH2D_start) == -1){
+//        perror("clock gettime: time_search_memcpyH2D_start");
+//    }
+
     cudaMemcpy(gpu_tree, S1.tree, sizeof(int)*RULE*FIELD, cudaMemcpyHostToDevice);
         cudaCheckErrors("cudaMemcpy gpu_tree");
     cudaMemcpy(gpu_header, S1.header, sizeof(int)*FIELD*packet_num, cudaMemcpyHostToDevice);
         cudaCheckErrors("cudaMemcpy gpu_headers");
 
+//    if (clock_gettime(CLOCK_REALTIME, &time_search_memcpyH2D_stop) == -1){
+//        perror("clock gettime: time_search_memcpyH2D_stop");
+//    }
+//    time1 += (time_search_memcpyH2D_stop.tv_sec - time_search_memcpyH2D_start.tv_sec) * 1000 + 
+//             (double)(time_search_memcpyH2D_stop.tv_nsec - time_search_memcpyH2D_start.tv_nsec) / 1e6;
     cudaEventRecord(time_search_memcpyH2D_stop, 0);
     cudaEventSynchronize(time_search_memcpyH2D_stop);
     cudaEventElapsedTime(&time1, time_search_memcpyH2D_start, time_search_memcpyH2D_stop);
@@ -159,22 +168,40 @@ int main(int argc, char** argv){
 *       3. Memory copy back (gpu_bv_final)
 ********************************************************/
     cudaEventRecord(time_gpu_start, 0);
-
-    packet_classify<<<dimGrid, dimBlock>>>(gpu_tree, gpu_header, gpu_match_result, S1.packet_num, S1.block_dim);
-
+//    if (clock_gettime(CLOCK_REALTIME, &time_gpu_start) == -1){
+//        perror("clock gettime: time_gpu_start");
+//    }
+    packet_classify<<<dimGrid, dimBlock>>>(gpu_tree, gpu_header, gpu_match_result, S1.packet_num);
+    cudaCheckErrors("packet_classify");
+    cudaThreadSynchronize();
+//    if (clock_gettime(CLOCK_REALTIME, &time_gpu_stop) == -1){
+//        perror("clock gettime: time_gpu_stop");
+//    }
+//    time2 += (time_gpu_stop.tv_sec - time_gpu_start.tv_sec) * 1000 + 
+//             (double)(time_gpu_stop.tv_nsec - time_gpu_start.tv_nsec) / 1e6;
     cudaCheckErrors("Search fail");
     cudaEventRecord(time_gpu_stop, 0);
     cudaEventSynchronize(time_gpu_stop);
     cudaEventElapsedTime(&time2, time_gpu_start, time_gpu_stop);
     cudaEventDestroy(time_gpu_stop);
     cudaEventDestroy(time_gpu_start);
-    cout<<endl<<"*  2. Time for GPU computation: "<<time2<<"ms, GPU throughput: "<<packet_num/time2/1000<<" MPPS"<<endl;
+    cout<<endl<<"*  2. Time for GPU computation: "<<time2<<"ms"<<endl;
 
 
     cudaEventRecord(time_search_memcpyD2H_start, 0);
 
+
+//    if (clock_gettime(CLOCK_REALTIME, &time_search_memcpyD2H_start) == -1){
+//        perror("clock gettime: time_gpu_start");
+//    }
+
     cudaMemcpy(S2.match_result, gpu_match_result, sizeof(int)*packet_num*FIELD, cudaMemcpyDeviceToHost);
 
+//    if (clock_gettime(CLOCK_REALTIME, &time_search_memcpyD2H_stop) == -1){
+//        perror("clock gettime: time_search_memcpyD2H_stop");
+//    }
+//    time3 += (time_search_memcpyD2H_stop.tv_sec - time_search_memcpyD2H_start.tv_sec) * 1000 + 
+//             (double)(time_search_memcpyD2H_stop.tv_nsec - time_search_memcpyD2H_start.tv_nsec) / 1e6;
     cudaEventRecord(time_search_memcpyD2H_stop, 0);
     cudaEventSynchronize(time_search_memcpyD2H_stop);
     cudaEventElapsedTime(&time3, time_search_memcpyD2H_start, time_search_memcpyD2H_stop);
@@ -188,10 +215,10 @@ int main(int argc, char** argv){
 *       1. Thread Allocation
 ********************************************************/
     pthread_attr_t attr;
-    pthread_t* merge_threads = new pthread_t[packet_num];
+    pthread_t* merge_threads = new pthread_t[packet_num / BATCH];
     pthread_attr_init(&attr);
     pthread_attr_setscope(&attr, PTHREAD_SCOPE_SYSTEM);
-    pthread_param_C* data_C = new pthread_param_C[packet_num];
+    pthread_param_C* data_C = new pthread_param_C[packet_num / BATCH];
 
 /********************************************************
 *   Main Packet Classification Process [Merge_Partial][CPU]
@@ -203,64 +230,54 @@ int main(int argc, char** argv){
         perror( "clock gettime: thread_prep_start" );        
     }
 
-    for (int i = 0; i < packet_num; i++){
+    for (int i = 0; i < packet_num / BATCH; i++){
         data_C[i].thread_id = i;
-        //data_C[i].bv_final = S2.bv_final;
-//        for (int j = 0; j < int_count; j++){
-        for (int k = 0; k < FIELD; k++){
-            data_C[i].partial_merge_source[k] = bv[S2.match_result[i*FIELD+k]];
-        }
-//        }
+        data_C[i].BATCH = BATCH;
+        //data_C[i].partial_merge_source = new long int*[BATCH * FIELD];
+        data_C[i].merge_result = S2.bv_final;
+        data_C[i].merge_source = bv;
+        data_C[i].match_result = S2.match_result;
+    //    for (int k = 0; k < FIELD * BATCH; k++){
+    //       data_C[i].partial_merge_source[k] = bv[S2.match_result[i*FIELD*BATCH+k]];
+    //    }
     }
     if (clock_gettime(CLOCK_REALTIME, &thread_prep_stop) == -1){
         perror("clock gettime: thread_prep_stop");
     }
     time4 += (thread_prep_stop.tv_sec - thread_prep_start.tv_sec) * 1000 + 
              (double)(thread_prep_stop.tv_nsec - thread_prep_start.tv_nsec) / 1e6;
-    cout<<endl<<">>>>>>[Stage 2: Merge][CPU] "<<"Number of Threads: "<<packet_num<<endl;
-    cout<<endl<<"*  1. Time for preparing threads: "<<time4<<"ms"<<endl;
+    cout<<endl<<">>>>>>[Stage 2: Merge][CPU] "<<"Number of Threads: "<<packet_num / BATCH<<endl;
+    cout<<endl<<"*  1. Time for preparing threads data: "<<time4<<"ms"<<endl;
 
 
 
     if (clock_gettime(CLOCK_REALTIME, &cpu_merge_start) == -1){
         perror("clock_gettime: cpu_merge_start");
     }    
-    for (int i = 0; i < packet_num; i++){
+    for (int i = 0; i < packet_num / BATCH; i++){
+        //cout<<"Thread: "<<i<<endl;
         if (pthread_create(&merge_threads[i], &attr, (void*(*)(void *))merge, (void*) &data_C[i]) != 0){
-            printf("[Partial Merge] Creating Thread #%d failed! \n", i);
+            printf("[Merge] Creating Thread #%d failed! \n", i);
+        }
+    }  
+
+    for (int i = 0; i < packet_num / BATCH; i++){
+        if (pthread_join(merge_threads[i], NULL) != 0){
+            printf("[Merge] Join Thread #%d failed! \n", i);
         }
     }
     if (clock_gettime(CLOCK_REALTIME, &cpu_merge_stop) == -1){
         perror("clock_gettime: cpu_merge_stop");
     }
-    
     time5 += (cpu_merge_stop.tv_sec - cpu_merge_start.tv_sec) * 1000 + 
              (cpu_merge_stop.tv_nsec - cpu_merge_start.tv_nsec) / 1e6;
-    cout<<endl<<"*  2. Time for Merge: "<<time5<<"ms"<<endl;
+    cout<<endl<<"*  2. Time for computing: "<<time5<<"ms"<<endl;
 
-
-    if (clock_gettime(CLOCK_REALTIME, &thread_join_start) == -1){
-        perror("clock_gettime: thread_join_start");
-    }     
-
-    for (int i = 0; i < packet_num; i++){
-        if (pthread_join(merge_threads[i], NULL) != 0){
-            printf("[Partial Merge] Join Thread #%d failed! \n", i);
-        }
-    }
-
-    if (clock_gettime(CLOCK_REALTIME, &thread_join_stop) == -1){
-        perror("clock_gettime: thread_join_stop");
-    } 
-    time6 += (thread_join_stop.tv_sec - thread_join_start.tv_sec) * 1000 + 
-             (thread_join_stop.tv_nsec - thread_join_start.tv_nsec) / 1e6;
-    
-    cout<<endl<<">>>>>>[Stage 3: Join All Threads][CPU] "<<"Number of Threads: "<<packet_num<<endl;
-    cout<<endl<<"*  1. Time for joining all threads: "<<time6<<"ms"<<endl;
-
-    cout<<endl<<"*  2. CPU throughput: "<<packet_num/(time4 + time5)/1000<<" MPPS"<<endl;
-
-    cout<<endl<<">>>>>> Total throughput: "<<packet_num/(time1 + time2 + time3 + time4 + time5)/1000<<" MPPS"<<endl;
+    cout<<endl<<">>>>>> Total time for GPU: "<< time1 + time2 + time3<<"ms"<<endl;
+    cout<<">>>>>> Total time for CPU: "<<time4 + time5<<"ms"<<endl;
+    cout<<">>>>>> GPU throughput (Compute Only): "<<packet_num/time2/1000<<" MPPS"<<endl;
+    cout<<">>>>>> CPU throughput (Compute Only): "<<packet_num/time5/1000<<" MPPS"<<endl;
+    cout<<">>>>>> Total throughput (Including memory copy and thread preparing): "<<packet_num/(time1 + time2 + time3 + time4 + time5)/1000<<" MPPS"<<endl<<endl;
 /********************************************************
 *   Clear Memory:
 *       1. Dynamic allocations on host
@@ -282,7 +299,9 @@ int main(int argc, char** argv){
     for(int i = 0; i < FIELD*(RULE+1); i++){
         delete bv[i];
     }
-    
+   /* for (int i = 0; i < packet_num / BATCH; i++){
+        delete data_C[i].partial_merge_source;
+    }*/
     delete tree;
     delete bv;
     delete header;
@@ -291,8 +310,8 @@ int main(int argc, char** argv){
     delete S2.match_result;
     delete S1.tree;
     delete S1.header;
-    delete S2.bv;
-    delete S2.merge_result_partial;
+    //delete S2.bv;
+    //delete S2.merge_result_partial;
     //delete partial_merge_threads;
     //delete final_merge_threads;
 

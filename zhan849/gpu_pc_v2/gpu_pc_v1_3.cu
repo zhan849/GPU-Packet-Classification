@@ -82,7 +82,7 @@ __global__ void packet_merge(long int* gpu_bv, int* gpu_match_result, long int* 
 							  gpu_bv[gpu_match_result[packetIdx*15+13]*int_count + index%int_count] &
 							  gpu_bv[gpu_match_result[packetIdx*15+14]*int_count + index%int_count];
 
-	__syncthreads();
+	/*__syncthreads();
 
 	if (blockDim.x * blockIdx.x + threadIdx.x < packet_num){
 		gpu_bv_final[blockDim.x*blockIdx.x+threadIdx.x] = gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)*int_count] & 
@@ -118,7 +118,7 @@ __global__ void packet_merge(long int* gpu_bv, int* gpu_match_result, long int* 
 														  gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+30] &
 														  gpu_merge_result[(blockDim.x*blockIdx.x+threadIdx.x)%int_count+31];
 
-	}
+	}*/
 	
 	
 
@@ -272,6 +272,7 @@ cout<<"============================ Experiment Starts ==========================
 ********************************************************/
 	cudaEventRecord(time_comp_start, 0);
 	packet_classify<<<dimGrid, dimBlock>>>(gpu_tree, gpu_headers, gpu_match_result, packet_num, block_dim);
+	cudaThreadSynchronize();
 	cudaCheckErrors("Search fail");
 
 	cudaEventRecord(time_comp_stop, 0);
@@ -349,6 +350,7 @@ cout<<"============================ Experiment Starts ==========================
 	cudaEventRecord(time_merge_start, 0);
 
 	packet_merge<<<dimGrid_merge, dimBlock_merge>>>(gpu_bv, gpu_match_result, gpu_merge_result, gpu_bv_final, packet_num, block_dim);
+	//cudaThreadSynchronize();	
 	cudaCheckErrors("Merge fail");
 
 	cudaEventRecord(time_merge_stop, 0);

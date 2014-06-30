@@ -51,7 +51,15 @@ void bv_gen(long int** bv, long int* bv_final, int packet_num){
 	}
 	cout<<"... BV Gen ..."<<endl;
 }
-
+void bv_gen_short(int* bv, int* bv_final, int packet_num){
+	for (int i = 0; i < FIELD*(RULE + 1)*int_count; i++){
+		bv[i] = rand() % 5;
+	}
+	for(int i = 0; i < packet_num; i++){
+		bv_final[i] = 1;
+	}
+	cout<<"... BV_Short Gen ..."<<endl;
+}
 void data_test(int** tree, int** headers, long int** bv, int* bv_final, int packet_num, int type){
 	if (type > 15 | type == 0){
 		return;
@@ -97,7 +105,7 @@ void data_test(int** tree, int** headers, long int** bv, int* bv_final, int pack
 	cout<<"============== End of Print =============="<<endl;
 }
 
-__global__ void packet_classify(int* gpu_tree, int* gpu_headers, int* gpu_match_result, int packet_num, int block_dim){
+__global__ void packet_classify(int* gpu_tree, int* gpu_headers, int* gpu_match_result, int packet_num){
 	__shared__ int gpu_tree_shared[FIELD*RULE];
 	int level = 0;
 	while(level * block_dim + threadIdx.x < FIELD * RULE){
@@ -113,8 +121,47 @@ __global__ void packet_classify(int* gpu_tree, int* gpu_headers, int* gpu_match_
 	gpu_match_result[blockDim.x * blockIdx.x + threadIdx.x] = i - RULE;
 
 }
+__global__ void pc_short(int* gpu_tree, int* gpu_headers, int* gpu_bv, int* gpu_bv_final, int packet_num){
+	__shared__ int gpu_tree_shared[FIELD*RULE];
+	__shared__ int gpu_bv_shared[FIELD*(RULE+1)*int_count];
+	//__shared__ int gpu_match_result[ block_dim ];
+	if (threadIdx.x < FIELD * RULE){
+		gpu_tree_shared[threadIdx.x] = gpu_tree[threadIdx.x];
+	}
+	if (threadIdx.x >= FIELD * RULE && threadIdx.x <= FIELD * (RULE + 1) * int_count){
+		gpu_bv_shared[threadIdx.x - FIELD * RULE] = gpu_bv[threadIdx.x - FIELD * RULE];
+	}
+	__syncthreads();
+	int index = blockDim.x*blockIdx.x + threadIdx.x;
+	__shared__ int partial_result;
+	partial_result = 0xffffffff;
+	for (int j = 0; j < FIELD; j++){
+		int i = 0;
+		while (i < RULE){
+			i = 2 * i + (gpu_headers[index * FIELD + j] <= gpu_tree_shared[index % FIELD * RULE + i]) * 1 + (gpu_headers[index * FIELD + j] > gpu_tree_shared[index % FIELD * RULE + i]) * 2;
+		}
+		partial_result &= gpu_bv_shared[i - RULE];
+	}
+	gpu_bv_final[ index ] = partial_result;
+	//int i = 0, j = 0;
+	//int index = blockDim.x*blockIdx.x + threadIdx.x;
+	//while (i < RULE){
+		
+	//	i = 2 * i + (gpu_headers[index] <= gpu_tree_shared[index / packet_num * RULE+i]) * 1 + (gpu_headers[index] > gpu_tree_shared[index / packet_num * RULE+i]) * 2;
+	//}
+	//gpu_bv_final[ index / FIELD ] = gpu_bv_shared[i - RULE];
+	//__syncthreads();
 
-__global__ void packet_merge(long int* gpu_bv, int* gpu_match_result, long int* gpu_merge_result, long int*gpu_bv_final, int packet_num, int block_dim){
+	//if(threadIdx.x < block_dim/ FIELD){
+	//	for (j = 0; j < FIELD;j++){
+	//		gpu_bv_final[blockIdx.x * (block_dim / FIELD) + threadIdx.x] &= gpu_match_result[threadIdx.x * FIELD + j];
+	//		//gpu_bv_final[blockDim.x * (block_dim / FIELD) + threadIdx.x] &= 1;
+	//	}
+	//}
+	
+	//gpu_match_result[blockDim.x * blockIdx.x + threadIdx.x] = i - RULE;
+}
+__global__ void packet_merge(long int* gpu_bv, int* gpu_match_result, long int* gpu_merge_result, long int*gpu_bv_final, int packet_num){
 	int index = blockDim.x * blockIdx.x + threadIdx.x;
 	int packetIdx = index/int_count;
 	gpu_merge_result[index] = gpu_bv[gpu_match_result[packetIdx*15]*int_count + index%int_count] &
@@ -175,111 +222,48 @@ __global__ void packet_merge(long int* gpu_bv, int* gpu_match_result, long int* 
 
 void merge(void* foo){
 	pthread_param_C* param = (pthread_param_C*) foo;
-	for (int i = 0; i < int_count; i++){
-		param->merge_result[i] = param->partial_merge_source[0][i] & 
-								 param->partial_merge_source[1][i] & 
-								 param->partial_merge_source[2][i] & 
-								 param->partial_merge_source[3][i] & 
-								 param->partial_merge_source[4][i] & 
-								 param->partial_merge_source[5][i] & 
-								 param->partial_merge_source[6][i] & 
-								 param->partial_merge_source[7][i] & 
-								 param->partial_merge_source[8][i] & 
-								 param->partial_merge_source[9][i] & 
-								 param->partial_merge_source[10][i] & 
-								 param->partial_merge_source[11][i] &
-								 param->partial_merge_source[12][i] & 
-								 param->partial_merge_source[13][i] & 
-								 param->partial_merge_source[14][i]; 
+	for (int i = 0; i < param->BATCH; i++){
+		//cout<<"[ Merge ] Thread: "<<param->thread_id<<", header # "<<i<<endl;
+		for (int j = 0; j < int_count; j++){
+			/*long int merge_partial = 0xffffffffffffffff;
+			for (int k = 0; k < FIELD; k++){
+				merge_partial &= param->merge_source[param->match_result[(param->thread_id * param->BATCH + i) * FIELD + k]][j];
+				if (merge_partial == 0){
+					break;
+				}
+			}
+			if (merge_partial != 0){
+				param->merge_result[(param->thread_id * param->BATCH + i) * int_count + j] = merge_partial;
+				break;
+			}*/
+			param->merge_result[(param->thread_id * param->BATCH + i) * int_count + j] = param->merge_source[param->match_result[(param->thread_id * param->BATCH + i) * FIELD + 0]][j] & 
+																						 param->merge_source[param->match_result[(param->thread_id * param->BATCH + i) * FIELD + 1]][j] &
+																						 param->merge_source[param->match_result[(param->thread_id * param->BATCH + i) * FIELD + 2]][j] & 
+																						 param->merge_source[param->match_result[(param->thread_id * param->BATCH + i) * FIELD + 3]][j] & 
+																						 param->merge_source[param->match_result[(param->thread_id * param->BATCH + i) * FIELD + 4]][j] & 
+																						 param->merge_source[param->match_result[(param->thread_id * param->BATCH + i) * FIELD + 5]][j];/*
+																						 param->merge_source[param->match_result[(param->thread_id * param->BATCH + i) * FIELD + 6]][j] & 
+																						 param->merge_source[param->match_result[(param->thread_id * param->BATCH + i) * FIELD + 7]][j] &
+																						 param->merge_source[param->match_result[(param->thread_id * param->BATCH + i) * FIELD + 8]][j] & 
+																						 param->merge_source[param->match_result[(param->thread_id * param->BATCH + i) * FIELD + 9]][j] & 
+																						 param->merge_source[param->match_result[(param->thread_id * param->BATCH + i) * FIELD + 10]][j] & 
+																						 param->merge_source[param->match_result[(param->thread_id * param->BATCH + i) * FIELD + 11]][j] &
+																						 param->merge_source[param->match_result[(param->thread_id * param->BATCH + i) * FIELD + 12]][j] & 
+																						 param->merge_source[param->match_result[(param->thread_id * param->BATCH + i) * FIELD + 13]][j] &
+																						 param->merge_source[param->match_result[(param->thread_id * param->BATCH + i) * FIELD + 14]][j];*/
+		}
 	}
-/*	param->bv_final[param->thread_id] = param->merge_result[0] &
-										param->merge_result[1] &
-										param->merge_result[2] &
-										param->merge_result[3] &
-										param->merge_result[4] &
-										param->merge_result[5] &
-										param->merge_result[6] &
-										param->merge_result[7] &
-										param->merge_result[8] &
-										param->merge_result[9] &
-										param->merge_result[10] &
-										param->merge_result[11] &
-										param->merge_result[12] &
-										param->merge_result[13] &
-										param->merge_result[14] &
-										param->merge_result[15] &
-										param->merge_result[16] &
-										param->merge_result[17] &
-										param->merge_result[18] &
-										param->merge_result[19] &
-										param->merge_result[20] &
-										param->merge_result[21] &
-										param->merge_result[22] &
-										param->merge_result[23] &
-										param->merge_result[24] &
-										param->merge_result[25] &
-										param->merge_result[26] &
-										param->merge_result[27] &
-										param->merge_result[28] &
-										param->merge_result[29] &
-										param->merge_result[30] &
-										param->merge_result[31];
-										*/
+	//cout<<"Thread "<<param->thread_id<<" finish!"<<endl;
 }
 
 void partial_merge(void* foo){
 	pthread_param_P* param = (pthread_param_P*) foo;
-	param -> merge_result_partial[param -> thread_id] = param->merge_source[0] &
-													   	param->merge_source[1] & 
-													   	param->merge_source[2] & 
-													   	param->merge_source[3] & 
-													   	param->merge_source[4] & 
-													   	param->merge_source[5] & 
-													   	param->merge_source[6] & 
-													   	param->merge_source[7] & 
-													   	param->merge_source[8] & 
-													   	param->merge_source[9] & 
-													   	param->merge_source[10] & 
-													   	param->merge_source[11] &
-													   	param->merge_source[12] &
-													   	param->merge_source[13] & 
-													   	param->merge_source[14];   
+
 }
 
 void final_merge(void* foo){
 	pthread_param_F* param = (pthread_param_F*) foo;
-	param->bv_final[param->thread_id] = param->merge_source[0] &
-										param->merge_source[1] &
-										param->merge_source[2] &
-										param->merge_source[3] &
-										param->merge_source[4] &
-										param->merge_source[5] &
-										param->merge_source[6] &
-										param->merge_source[7] &
-										param->merge_source[8] &
-										param->merge_source[9] &
-										param->merge_source[10] &
-										param->merge_source[11] &
-										param->merge_source[12] &
-										param->merge_source[13] &
-										param->merge_source[14] &
-										param->merge_source[15] &
-										param->merge_source[16] &
-										param->merge_source[17] &
-										param->merge_source[18] &
-										param->merge_source[19] &
-										param->merge_source[20] &
-										param->merge_source[21] &
-										param->merge_source[22] &
-										param->merge_source[23] &
-										param->merge_source[24] &
-										param->merge_source[25] &
-										param->merge_source[26] &
-										param->merge_source[27] &
-										param->merge_source[28] &
-										param->merge_source[29] &
-										param->merge_source[30] &
-										param->merge_source[31];
+
 }
 
 

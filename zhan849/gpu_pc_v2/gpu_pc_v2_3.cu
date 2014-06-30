@@ -163,6 +163,7 @@ int main(int argc, char** argv){
     packet_classify<<<dimGrid, dimBlock>>>(gpu_tree, gpu_header, gpu_match_result, S1.packet_num, S1.block_dim);
 
     cudaCheckErrors("Search fail");
+    cudaThreadSynchronize();
     cudaEventRecord(time_gpu_stop, 0);
     cudaEventSynchronize(time_gpu_stop);
     cudaEventElapsedTime(&time2, time_gpu_start, time_gpu_stop);
@@ -192,21 +193,25 @@ int main(int argc, char** argv){
     } 
     for (int i = 0; i < packet_num; i++){
         for (int j = 0; j < int_count; j++){
+            //cout<<"packet: "<<i<<", int #"<<j<<", int_count: "<<int_count<<endl;
+            //for (int k = 0; i < FIELD; k++){
+            //    cout<<"Matching Index: "<<S2.match_result[i*FIELD+1]<<", Matching Result: "<<bv[S2.match_result[i*FIELD+1]][j]<<endl;
+           // }
             S2.bv_final[i*int_count + j] = bv[S2.match_result[i*FIELD+0]][j] &
-                                        bv[S2.match_result[i*FIELD+1]][j] &
-                                        bv[S2.match_result[i*FIELD+2]][j] &
-                                        bv[S2.match_result[i*FIELD+3]][j] &
-                                        bv[S2.match_result[i*FIELD+4]][j] &
-                                        bv[S2.match_result[i*FIELD+5]][j] &
-                                        bv[S2.match_result[i*FIELD+6]][j] &
-                                        bv[S2.match_result[i*FIELD+7]][j] &
-                                        bv[S2.match_result[i*FIELD+8]][j] &
-                                        bv[S2.match_result[i*FIELD+9]][j] &
-                                        bv[S2.match_result[i*FIELD+10]][j] &
-                                        bv[S2.match_result[i*FIELD+11]][j] &
-                                        bv[S2.match_result[i*FIELD+12]][j] &
-                                        bv[S2.match_result[i*FIELD+13]][j] &
-                                        bv[S2.match_result[i*FIELD+14]][j]; 
+                                           bv[S2.match_result[i*FIELD+1]][j] &
+                                           bv[S2.match_result[i*FIELD+2]][j] &
+                                           bv[S2.match_result[i*FIELD+3]][j] &
+                                           bv[S2.match_result[i*FIELD+4]][j] &
+                                           bv[S2.match_result[i*FIELD+5]][j] &
+                                           bv[S2.match_result[i*FIELD+6]][j] &
+                                           bv[S2.match_result[i*FIELD+7]][j] &
+                                           bv[S2.match_result[i*FIELD+8]][j] &
+                                           bv[S2.match_result[i*FIELD+9]][j] &
+                                           bv[S2.match_result[i*FIELD+10]][j] &
+                                           bv[S2.match_result[i*FIELD+11]][j] &
+                                           bv[S2.match_result[i*FIELD+12]][j] &
+                                           bv[S2.match_result[i*FIELD+13]][j] &
+                                           bv[S2.match_result[i*FIELD+14]][j]; 
         }
     }
     if (clock_gettime(CLOCK_REALTIME, &cpu_merge_stop) == -1){
