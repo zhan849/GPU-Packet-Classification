@@ -124,7 +124,6 @@ __global__ void packet_classify(int* gpu_tree, int* gpu_headers, int* gpu_match_
 __global__ void pc_short(int* gpu_tree, int* gpu_headers, int* gpu_bv, int* gpu_bv_final, int packet_num){
 	__shared__ int gpu_tree_shared[FIELD*RULE];
 	__shared__ int gpu_bv_shared[FIELD*(RULE+1)*int_count];
-	//__shared__ int gpu_match_result[ block_dim ];
 	if (threadIdx.x < FIELD * RULE){
 		gpu_tree_shared[threadIdx.x] = gpu_tree[threadIdx.x];
 	}
@@ -143,23 +142,6 @@ __global__ void pc_short(int* gpu_tree, int* gpu_headers, int* gpu_bv, int* gpu_
 		partial_result &= gpu_bv_shared[i - RULE];
 	}
 	gpu_bv_final[ index ] = partial_result;
-	//int i = 0, j = 0;
-	//int index = blockDim.x*blockIdx.x + threadIdx.x;
-	//while (i < RULE){
-		
-	//	i = 2 * i + (gpu_headers[index] <= gpu_tree_shared[index / packet_num * RULE+i]) * 1 + (gpu_headers[index] > gpu_tree_shared[index / packet_num * RULE+i]) * 2;
-	//}
-	//gpu_bv_final[ index / FIELD ] = gpu_bv_shared[i - RULE];
-	//__syncthreads();
-
-	//if(threadIdx.x < block_dim/ FIELD){
-	//	for (j = 0; j < FIELD;j++){
-	//		gpu_bv_final[blockIdx.x * (block_dim / FIELD) + threadIdx.x] &= gpu_match_result[threadIdx.x * FIELD + j];
-	//		//gpu_bv_final[blockDim.x * (block_dim / FIELD) + threadIdx.x] &= 1;
-	//	}
-	//}
-	
-	//gpu_match_result[blockDim.x * blockIdx.x + threadIdx.x] = i - RULE;
 }
 __global__ void packet_merge(long int* gpu_bv, int* gpu_match_result, long int* gpu_merge_result, long int*gpu_bv_final, int packet_num){
 	int index = blockDim.x * blockIdx.x + threadIdx.x;
